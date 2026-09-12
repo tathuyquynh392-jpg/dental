@@ -31,7 +31,8 @@ export const Login: React.FC = () => {
       if (res.data.success) {
         const { token, user } = res.data.data;
         login(token, user);
-        showToast(`Chào mừng ${user.name} đã quay trở lại!`, 'success');
+        const displayName = user.name || user.fullName || 'Người dùng';
+        showToast(`Chào mừng ${displayName} đã quay trở lại!`, 'success');
 
         if (user.role === 'ADMIN') {
           navigate('/admin/dashboard');

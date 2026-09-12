@@ -30,14 +30,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (token) {
         try {
           const res = await api.get('/auth/me');
-          if (res.data.success) {
+          if (res.data && res.data.success && res.data.data) {
             const fetchedUser = res.data.data;
             setUser(fetchedUser);
             localStorage.setItem('user', JSON.stringify(fetchedUser));
           }
-        } catch (error) {
-          console.error('Failed to verify token', error);
-          logout();
+        } catch (error: any) {
+          console.warn('Token verification check', error);
+          if (error.response && error.response.status === 401) {
+            logout();
+          }
         }
       }
       setLoading(false);

@@ -8,13 +8,10 @@ const api = axios.create({
   },
 });
 
-// Initial Seed Data Store for Interactive Demo Mode
-const getInitialStore = () => {
-  const saved = localStorage.getItem('luckydental_demo_db');
-  if (saved) {
-    try { return JSON.parse(saved); } catch (e) {}
-  }
+// In-Memory Singleton Store for Interactive Demo Mode
+let demoStore: any = null;
 
+const createSeedStore = () => {
   const initialPatients: Patient[] = [
     {
       id: 1,
@@ -239,7 +236,7 @@ const getInitialStore = () => {
     { id: 2, userId: 101, title: 'Nhắc nhở lịch hẹn', message: 'Bạn có lịch hẹn tái khám niềng răng vào 09:00 15/09/2026', isRead: false, createdAt: '2026-09-12T08:30:00.000Z' }
   ];
 
-  const store = {
+  return {
     patients: initialPatients,
     doctors: initialDoctors,
     services: initialServices,
@@ -252,19 +249,31 @@ const getInitialStore = () => {
     users: initialUsers,
     notifications: initialNotifications
   };
+};
 
-  localStorage.setItem('luckydental_demo_db', JSON.stringify(store));
-  return store;
+const getStore = () => {
+  if (!demoStore) {
+    const saved = localStorage.getItem('luckydental_demo_db');
+    if (saved) {
+      try { demoStore = JSON.parse(saved); } catch (e) {}
+    }
+  }
+  if (!demoStore) {
+    demoStore = createSeedStore();
+    localStorage.setItem('luckydental_demo_db', JSON.stringify(demoStore));
+  }
+  return demoStore;
 };
 
 const saveStore = (store: any) => {
+  demoStore = store;
   localStorage.setItem('luckydental_demo_db', JSON.stringify(store));
 };
 
 // Request Interceptor: Attach JWT Token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -278,8 +287,10 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
       if (token) {
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         window.location.href = '#/login';
@@ -302,9 +313,10 @@ api.interceptors.response.use(
         reqBody = {};
       }
 
-      const store = getInitialStore();
+      const store = getStore();
+      const params = error.config?.params || {};
 
-      console.log(`[Demo Engine] Intercepted ${method.toUpperCase()} ${url}`, reqBody);
+      console.log(`[Demo Engine] ${method.toUpperCase()} ${url}`, reqBody, params);
 
       // --- AUTH ---
       if (url.includes('/auth/login')) {
@@ -329,7 +341,7 @@ api.interceptors.response.use(
       }
 
       if (url.includes('/auth/me')) {
-        const saved = localStorage.getItem('user');
+        const saved = sessionStorage.getItem('user') || localStorage.getItem('user');
         const user = saved ? JSON.parse(saved) : store.users[0];
         return Promise.resolve({ data: { success: true, data: user } });
       }
@@ -340,12 +352,12 @@ api.interceptors.response.use(
           name: reqBody.name || 'Bệnh Nhân Mới',
           email: reqBody.email,
           phone: reqBody.phone || '0901234567',
-          role: 'PATIENT',
-          status: 'ACTIVE',
+          role: 'PATIENT' as const,
+          status: 'ACTIVE' as const,
           createdAt: new Date().toISOString()
         };
-        store.users.push(newUser);
-        store.patients.push({
+        store.users.unshift(newUser);
+        const newPatient: Patient = {
           id: store.patients.length + 1,
           userId: newUser.id,
           dateOfBirth: reqBody.dateOfBirth || '1998-01-01',
@@ -356,7 +368,8 @@ api.interceptors.response.use(
           notes: '',
           createdAt: new Date().toISOString(),
           user: newUser
-        });
+        };
+        store.patients.unshift(newPatient);
         saveStore(store);
         return Promise.resolve({ data: { success: true, data: { user: newUser, token: 'demo-jwt-token' } } });
       }
@@ -370,11 +383,27 @@ api.interceptors.response.use(
             const p = store.patients.find((item: any) => item.id === pid) || store.patients[0];
             return Promise.resolve({ data: { success: true, data: p } });
           }
+          let list = [...store.patients];
+          if (params.search) {
+            const q = params.search.toLowerCase();
+            list = list.filter((p: any) =>
+              p.user?.name?.toLowerCase().includes(q) ||
+              p.user?.email?.toLowerCase().includes(q) ||
+              p.user?.phone?.includes(q) ||
+              p.address?.toLowerCase().includes(q)
+            );
+          }
+          if (params.gender && params.gender !== 'ALL') {
+            list = list.filter((p: any) => p.gender === params.gender);
+          }
+          if (params.status && params.status !== 'ALL') {
+            list = list.filter((p: any) => p.user?.status === params.status);
+          }
           return Promise.resolve({
             data: {
               success: true,
-              data: store.patients,
-              meta: { total: store.patients.length, page: 1, limit: 10, totalPages: 1 }
+              data: list,
+              meta: { total: list.length, page: 1, limit: 10, totalPages: 1 }
             }
           });
         }
@@ -395,8 +424,8 @@ api.interceptors.response.use(
               name: reqBody.name || 'Bệnh Nhân Mới',
               email: reqBody.email || `patient${newId}@gmail.com`,
               phone: reqBody.phone || '0900000000',
-              role: 'PATIENT',
-              status: 'ACTIVE'
+              role: 'PATIENT' as const,
+              status: 'ACTIVE' as const
             }
           };
           store.patients.unshift(newPatient);
@@ -441,7 +470,26 @@ api.interceptors.response.use(
       // --- DOCTORS ---
       if (url.includes('/doctors')) {
         if (method === 'get') {
-          return Promise.resolve({ data: { success: true, data: store.doctors } });
+          let list = [...store.doctors];
+          if (params.search) {
+            const q = params.search.toLowerCase();
+            list = list.filter((d: any) =>
+              d.name?.toLowerCase().includes(q) ||
+              d.email?.toLowerCase().includes(q) ||
+              d.phone?.includes(q) ||
+              d.specialty?.toLowerCase().includes(q)
+            );
+          }
+          if (params.status && params.status !== 'ALL') {
+            list = list.filter((d: any) => d.status === params.status);
+          }
+          return Promise.resolve({
+            data: {
+              success: true,
+              data: list,
+              meta: { total: list.length, page: 1, limit: 10, totalPages: 1 }
+            }
+          });
         }
         if (method === 'post') {
           const newDoc: Doctor = {
@@ -454,7 +502,7 @@ api.interceptors.response.use(
             experience: reqBody.experience || '5 năm kinh nghiệm',
             workingDays: reqBody.workingDays || 'Thứ 2 - Thứ 6',
             workingHours: reqBody.workingHours || '08:00 - 17:00',
-            status: 'ACTIVE'
+            status: (reqBody.status as 'ACTIVE' | 'INACTIVE') || 'ACTIVE'
           };
           store.doctors.unshift(newDoc);
           saveStore(store);
@@ -486,7 +534,24 @@ api.interceptors.response.use(
       // --- SERVICES ---
       if (url.includes('/services')) {
         if (method === 'get') {
-          return Promise.resolve({ data: { success: true, data: store.services } });
+          let list = [...store.services];
+          if (params.search) {
+            const q = params.search.toLowerCase();
+            list = list.filter((s: any) =>
+              s.name?.toLowerCase().includes(q) ||
+              s.description?.toLowerCase().includes(q)
+            );
+          }
+          if (params.status && params.status !== 'ALL') {
+            list = list.filter((s: any) => s.status === params.status);
+          }
+          return Promise.resolve({
+            data: {
+              success: true,
+              data: list,
+              meta: { total: list.length, page: 1, limit: 10, totalPages: 1 }
+            }
+          });
         }
         if (method === 'post') {
           const newService: Service = {
@@ -495,7 +560,7 @@ api.interceptors.response.use(
             description: reqBody.description || 'Mô tả dịch vụ',
             price: Number(reqBody.price) || 200000,
             duration: Number(reqBody.duration) || 30,
-            status: 'ACTIVE'
+            status: (reqBody.status as 'ACTIVE' | 'INACTIVE') || 'ACTIVE'
           };
           store.services.unshift(newService);
           saveStore(store);
@@ -527,11 +592,23 @@ api.interceptors.response.use(
       // --- APPOINTMENTS ---
       if (url.includes('/appointments')) {
         if (method === 'get') {
+          let list = [...store.appointments];
+          if (params.search) {
+            const q = params.search.toLowerCase();
+            list = list.filter((a: any) =>
+              a.patient?.user?.name?.toLowerCase().includes(q) ||
+              a.doctor?.name?.toLowerCase().includes(q) ||
+              a.service?.name?.toLowerCase().includes(q)
+            );
+          }
+          if (params.status && params.status !== 'ALL') {
+            list = list.filter((a: any) => a.status === params.status);
+          }
           return Promise.resolve({
             data: {
               success: true,
-              data: store.appointments,
-              meta: { total: store.appointments.length, page: 1, limit: 10, totalPages: 1 }
+              data: list,
+              meta: { total: list.length, page: 1, limit: 10, totalPages: 1 }
             }
           });
         }
@@ -573,7 +650,7 @@ api.interceptors.response.use(
             if (idx !== -1) {
               store.appointments[idx] = { ...store.appointments[idx], ...reqBody };
               saveStore(store);
-              return Promise.resolve({ data: { success: true, message: 'Cập nhật trạng thái lịch hẹn thành công', data: store.appointments[idx] } });
+              return Promise.resolve({ data: { success: true, message: 'Cập nhật lịch hẹn thành công', data: store.appointments[idx] } });
             }
           }
         }
@@ -643,11 +720,23 @@ api.interceptors.response.use(
       // --- MEDICATIONS ---
       if (url.includes('/medications')) {
         if (method === 'get') {
+          let list = [...store.medications];
+          if (params.search) {
+            const q = params.search.toLowerCase();
+            list = list.filter((m: any) =>
+              m.name?.toLowerCase().includes(q) ||
+              m.category?.toLowerCase().includes(q) ||
+              m.supplier?.toLowerCase().includes(q)
+            );
+          }
+          if (params.status && params.status !== 'ALL') {
+            list = list.filter((m: any) => m.status === params.status);
+          }
           return Promise.resolve({
             data: {
               success: true,
-              data: store.medications,
-              meta: { total: store.medications.length, page: 1, limit: 10, totalPages: 1, warnings: { lowStock: 1, outOfStock: 0, nearExpiry: 0 } }
+              data: list,
+              meta: { total: list.length, page: 1, limit: 10, totalPages: 1, warnings: { lowStock: 1, outOfStock: 0, nearExpiry: 0 } }
             }
           });
         }
@@ -693,7 +782,18 @@ api.interceptors.response.use(
       // --- INVOICES ---
       if (url.includes('/invoices')) {
         if (method === 'get') {
-          return Promise.resolve({ data: { success: true, data: store.invoices, meta: { total: store.invoices.length, page: 1, limit: 10, totalPages: 1 } } });
+          let list = [...store.invoices];
+          if (params.search) {
+            const q = params.search.toLowerCase();
+            list = list.filter((i: any) =>
+              i.invoiceCode?.toLowerCase().includes(q) ||
+              i.patient?.user?.name?.toLowerCase().includes(q)
+            );
+          }
+          if (params.status && params.status !== 'ALL') {
+            list = list.filter((i: any) => i.status === params.status);
+          }
+          return Promise.resolve({ data: { success: true, data: list, meta: { total: list.length, page: 1, limit: 10, totalPages: 1 } } });
         }
         if (method === 'post') {
           const newInvoice: Invoice = {
@@ -733,7 +833,6 @@ api.interceptors.response.use(
           };
           store.payments.unshift(newPayment);
 
-          // Update invoice paid status
           const invIdx = store.invoices.findIndex((inv: any) => inv.id === newPayment.invoiceId);
           if (invIdx !== -1) {
             store.invoices[invIdx].paidAmount = (store.invoices[invIdx].paidAmount || 0) + newPayment.amount;
@@ -751,7 +850,19 @@ api.interceptors.response.use(
       // --- USERS ---
       if (url.includes('/users')) {
         if (method === 'get') {
-          return Promise.resolve({ data: { success: true, data: store.users } });
+          let list = [...store.users];
+          if (params.search) {
+            const q = params.search.toLowerCase();
+            list = list.filter((u: any) =>
+              u.name?.toLowerCase().includes(q) ||
+              u.email?.toLowerCase().includes(q) ||
+              u.phone?.includes(q)
+            );
+          }
+          if (params.role && params.role !== 'ALL') {
+            list = list.filter((u: any) => u.role === params.role);
+          }
+          return Promise.resolve({ data: { success: true, data: list } });
         }
         if (method === 'patch' || method === 'put') {
           const idMatch = url.match(/\/users\/(\d+)/);
@@ -761,7 +872,7 @@ api.interceptors.response.use(
             if (idx !== -1) {
               store.users[idx] = { ...store.users[idx], ...reqBody };
               saveStore(store);
-              return Promise.resolve({ data: { success: true, message: 'Cập nhật tài khoản người dùng thành công', data: store.users[idx] } });
+              return Promise.resolve({ data: { success: true, message: 'Cập nhật người dùng thành công', data: store.users[idx] } });
             }
           }
         }

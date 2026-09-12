@@ -19,6 +19,7 @@ export interface Patient {
   medicalHistory?: string;
   allergy?: string;
   notes?: string;
+  createdAt?: string;
   user?: User;
   appointments?: Appointment[];
   medicalRecords?: MedicalRecord[];

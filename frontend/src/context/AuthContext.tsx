@@ -15,17 +15,21 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem('user');
+    const savedUser = sessionStorage.getItem('user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
 
   const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem('token');
+    return sessionStorage.getItem('token');
   });
 
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    // Clear legacy persistent localStorage logins so fresh visits always start unauthenticated
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+
     const initAuth = async () => {
       if (token) {
         try {
@@ -33,7 +37,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (res.data && res.data.success && res.data.data) {
             const fetchedUser = res.data.data;
             setUser(fetchedUser);
-            localStorage.setItem('user', JSON.stringify(fetchedUser));
+            sessionStorage.setItem('user', JSON.stringify(fetchedUser));
           }
         } catch (error: any) {
           console.warn('Token verification check', error);
@@ -50,20 +54,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = (newToken: string, newUser: User) => {
     setToken(newToken);
     setUser(newUser);
-    localStorage.setItem('token', newToken);
-    localStorage.setItem('user', JSON.stringify(newUser));
+    sessionStorage.setItem('token', newToken);
+    sessionStorage.setItem('user', JSON.stringify(newUser));
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
   };
 
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
+    sessionStorage.setItem('user', JSON.stringify(updatedUser));
   };
 
   return (

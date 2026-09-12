@@ -779,6 +779,76 @@ api.interceptors.response.use(
         }
       }
 
+      // --- DASHBOARD ADMIN ---
+      if (url.includes('/dashboard/admin')) {
+        const totalRevenue = store.invoices.reduce((acc: number, inv: any) => acc + (inv.paidAmount || 0), 0);
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: {
+              cards: {
+                totalPatients: store.patients.length,
+                totalDoctors: store.doctors.length,
+                todayAppointments: store.appointments.length,
+                pendingAppointments: store.appointments.filter((a: any) => a.status === 'PENDING').length,
+                activeTreatments: store.treatments.filter((t: any) => t.status === 'IN_PROGRESS').length,
+                monthlyRevenue: totalRevenue || 185000000,
+              },
+              charts: {
+                revenue: [
+                  { label: 'Tháng 4', revenue: 120000000 },
+                  { label: 'Tháng 5', revenue: 135000000 },
+                  { label: 'Tháng 6', revenue: 150000000 },
+                  { label: 'Tháng 7', revenue: 140000000 },
+                  { label: 'Tháng 8', revenue: 165000000 },
+                  { label: 'Tháng 9', revenue: totalRevenue || 185000000 },
+                ],
+                appointmentStatus: [
+                  { status: 'Đã xác nhận', count: store.appointments.filter((a: any) => a.status === 'CONFIRMED').length || 1 },
+                  { status: 'Hoàn thành', count: store.appointments.filter((a: any) => a.status === 'COMPLETED').length || 1 },
+                  { status: 'Chờ duyệt', count: store.appointments.filter((a: any) => a.status === 'PENDING').length || 1 },
+                  { status: 'Đã hủy', count: store.appointments.filter((a: any) => a.status === 'CANCELLED').length || 0 },
+                ],
+                patientGrowth: [
+                  { period: 'T5', count: 12 },
+                  { period: 'T6', count: 18 },
+                  { period: 'T7', count: 25 },
+                  { period: 'T8', count: 32 },
+                  { period: 'T9', count: store.patients.length || 45 },
+                ],
+                popularServices: [
+                  { name: 'Khám & Tư Vấn Tổng Quát', count: 48, totalRevenue: 7200000 },
+                  { name: 'Cạo Vôi & Đánh Bóng Răng', count: 35, totalRevenue: 12250000 },
+                  { name: 'Tẩy Trắng Răng Laser Whitening', count: 50, totalRevenue: 90000000 },
+                  { name: 'Trám Răng Composite Thẩm Mỹ', count: 22, totalRevenue: 8800000 },
+                  { name: 'Niềng Răng Mắc Cài Kim Loại', count: 15, totalRevenue: 420000000 },
+                ],
+              },
+              recentAppointments: store.appointments.slice(0, 5),
+            }
+          }
+        });
+      }
+
+      // --- DASHBOARD PATIENT ---
+      if (url.includes('/dashboard/patient')) {
+        const unpaidInvoices = store.invoices.filter((i: any) => i.status !== 'PAID');
+        const unpaidAmount = unpaidInvoices.reduce((sum: number, i: any) => sum + ((i.total || 0) - (i.paidAmount || 0)), 0);
+
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: {
+              upcomingAppointment: store.appointments[0] || null,
+              activeTreatment: store.treatments[0] || null,
+              lastVisit: store.medicalRecords[0] || null,
+              unpaidInvoicesCount: unpaidInvoices.length,
+              totalUnpaidAmount: unpaidAmount,
+            }
+          }
+        });
+      }
+
       // --- REPORTS & DASHBOARD ---
       if (url.includes('/reports')) {
         const totalRevenue = store.invoices.reduce((acc: number, inv: any) => acc + (inv.paidAmount || 0), 0);

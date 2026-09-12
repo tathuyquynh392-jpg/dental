@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  name          String
+  email         String         @unique
+  phone         String
+  password      String
+  role          String         @default("PATIENT") // ADMIN, PATIENT
+  status        String         @default("ACTIVE")  // ACTIVE, LOCKED
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  patient       Patient?
+  notifications Notification[]
+}
+
+model Patient {
+  id             Int             @id @default(autoincrement())
+  userId         Int             @unique
+  dateOfBirth    String
+  gender         String
+  address        String
+  medicalHistory String?
+  allergy        String?
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments   Appointment[]
+  medicalRecords MedicalRecord[]
+  treatments     Treatment[]
+  invoices       Invoice[]
+}
+
+model Doctor {
+  id           Int             @id @default(autoincrement())
+  name         String
+  email        String          @unique
+  phone        String
+  specialty    String
+  qualification String
+  experience   String
+  workingDays  String
+  workingHours String
+  status       String          @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  appointments Appointment[]
+  medicalRecords MedicalRecord[]
+  treatments   Treatment[]
+}
+
+model Service {
+  id           Int             @id @default(autoincrement())
+  name         String
+  description  String
+  price        Float
+  duration     Int             // in minutes
+  status       String          @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  appointments Appointment[]
+  treatments   Treatment[]
+  invoiceItems InvoiceItem[]
+}
+
+model Appointment {
+  id              Int             @id @default(autoincrement())
+  patientId       Int
+  doctorId        Int
+  serviceId       Int
+  appointmentDate String          // YYYY-MM-DD
+  appointmentTime String          // HH:mm
+  notes           String?
+  status          String          @default("PENDING") // PENDING, CONFIRMED, COMPLETED, CANCELLED, NO_SHOW
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  patient         Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          Doctor          @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  service         Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  medicalRecords  MedicalRecord[]
+  invoices        Invoice[]
+}
+
+model MedicalRecord {
+  id              Int          @id @default(autoincrement())
+  patientId       Int
+  doctorId        Int
+  appointmentId   Int?
+  symptoms        String
+  diagnosis       String
+  dentalCondition String
+  treatment       String
+  notes           String?
+  prescription    String?
+  followUpDate    String?      // YYYY-MM-DD
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  patient         Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          Doctor       @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+}
+
+model Treatment {
+  id          Int      @id @default(autoincrement())
+  patientId   Int
+  doctorId    Int
+  serviceId   Int
+  startDate   String   // YYYY-MM-DD
+  endDate     String?  // YYYY-MM-DD
+  cost        Float
+  status      String   @default("IN_PROGRESS") // NOT_STARTED, IN_PROGRESS, COMPLETED, PAUSED
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+model Medication {
+  id          Int      @id @default(autoincrement())
+  name        String
+  category    String
+  unit        String
+  quantity    Int
+  price       Float
+  expiryDate  String   // YYYY-MM-DD
+  supplier    String
+  status      String   @default("AVAILABLE") // AVAILABLE, LOW_STOCK, OUT_OF_STOCK, EXPIRED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Invoice {
+  id            Int           @id @default(autoincrement())
+  invoiceCode   String        @unique
+  patientId     Int
+  appointmentId Int?
+  invoiceDate   String        // YYYY-MM-DD
+  subtotal      Float
+  discount      Float         @default(0)
+  total         Float
+  paidAmount    Float         @default(0)
+  status        String        @default("UNPAID") // UNPAID, PARTIAL, PAID, CANCELLED
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  patient       Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment   Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  items         InvoiceItem[]
+  payments      Payment[]
+}
+
+model InvoiceItem {
+  id          Int      @id @default(autoincrement())
+  invoiceId   Int
+  serviceId   Int?
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Float
+  amount      Float
+
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service     Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+}
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  paymentCode   String   @unique
+  invoiceId     Int
+  amount        Float
+  paymentMethod String   // CASH, TRANSFER, CARD
+  paymentDate   String   // YYYY-MM-DD
+  status        String   @default("COMPLETED") // COMPLETED, FAILED, REFUNDED
+  note          String?
+  createdAt     DateTime @default(now())
+
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

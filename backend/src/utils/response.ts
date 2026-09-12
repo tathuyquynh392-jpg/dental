@@ -1,0 +1,29 @@
+import { Response } from 'express';
+
+export const sendSuccess = (
+  res: Response,
+  data: any,
+  message: string = 'Thành công',
+  statusCode: number = 200,
+  meta?: any
+) => {
+  return res.status(statusCode).json({
+    success: true,
+    message,
+    data,
+    meta,
+  });
+};
+
+export const sendError = (
+  res: Response,
+  message: string = 'Đã có lỗi xảy ra',
+  statusCode: number = 500,
+  errors?: any
+) => {
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    errors,
+  });
+};

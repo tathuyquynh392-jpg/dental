@@ -173,7 +173,34 @@ export const resetUserPassword = async (req: Request, res: Response) => {
 export const deleteUser = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
-    await prisma.user.delete({ where: { id } });
+    if (isNaN(id)) return sendError(res, 'ID tài khoản không hợp lệ', 400);
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: { patient: true },
+    });
+
+    if (!user) return sendError(res, 'Không tìm thấy tài khoản', 404);
+
+    const ops: any[] = [
+      prisma.notification.deleteMany({ where: { userId: id } }),
+    ];
+
+    if (user.patient) {
+      const pId = user.patient.id;
+      ops.push(
+        prisma.appointment.deleteMany({ where: { patientId: pId } }),
+        prisma.medicalRecord.deleteMany({ where: { patientId: pId } }),
+        prisma.treatment.deleteMany({ where: { patientId: pId } }),
+        prisma.invoice.deleteMany({ where: { patientId: pId } }),
+        prisma.patient.delete({ where: { id: pId } })
+      );
+    }
+
+    ops.push(prisma.user.delete({ where: { id } }));
+
+    await prisma.$transaction(ops);
+
     return sendSuccess(res, null, 'Xóa tài khoản người dùng thành công');
   } catch (error: any) {
     return sendError(res, error.message || 'Lỗi xóa tài khoản', 500);

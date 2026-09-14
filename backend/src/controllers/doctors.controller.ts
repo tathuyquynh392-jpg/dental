@@ -74,25 +74,36 @@ export const createDoctor = async (req: Request, res: Response) => {
   try {
     const { name, email, phone, specialty, qualification, experience, workingDays, workingHours, status } = req.body;
 
-    if (!name || !email || !phone || !specialty || !qualification || !workingDays || !workingHours) {
+    if (!name || !name.trim() || !email || !email.trim() || !phone || !phone.trim() || !specialty || !qualification || !workingDays || !workingHours) {
       return sendError(res, 'Vui lòng nhập đầy đủ thông tin bác sĩ bắt buộc (*)', 400);
     }
 
-    const existingDoctor = await prisma.doctor.findUnique({ where: { email } });
+    const phoneRegex = /^[0-9+\s-]{9,15}$/;
+    if (!phoneRegex.test(phone.trim())) {
+      return sendError(res, 'Số điện thoại bác sĩ không hợp lệ (từ 9 - 15 chữ số)', 400);
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return sendError(res, 'Địa chỉ email không đúng định dạng', 400);
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const existingDoctor = await prisma.doctor.findUnique({ where: { email: cleanEmail } });
     if (existingDoctor) {
       return sendError(res, 'Email bác sĩ này đã tồn tại trong hệ thống', 409);
     }
 
     const doctor = await prisma.doctor.create({
       data: {
-        name,
-        email,
-        phone,
-        specialty,
-        qualification,
-        experience: experience || 'Nhiều năm kinh nghiệm',
-        workingDays,
-        workingHours,
+        name: name.trim(),
+        email: cleanEmail,
+        phone: phone.trim(),
+        specialty: specialty.trim(),
+        qualification: qualification.trim(),
+        experience: experience?.trim() || 'Nhiều năm kinh nghiệm',
+        workingDays: workingDays.trim(),
+        workingHours: workingHours.trim(),
         status: status || 'ACTIVE',
       },
     });
@@ -106,22 +117,31 @@ export const createDoctor = async (req: Request, res: Response) => {
 export const updateDoctor = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return sendError(res, 'ID bác sĩ không hợp lệ', 400);
+
     const { name, email, phone, specialty, qualification, experience, workingDays, workingHours, status } = req.body;
 
     const doctor = await prisma.doctor.findUnique({ where: { id } });
     if (!doctor) return sendError(res, 'Không tìm thấy bác sĩ', 404);
 
+    if (phone) {
+      const phoneRegex = /^[0-9+\s-]{9,15}$/;
+      if (!phoneRegex.test(phone.trim())) {
+        return sendError(res, 'Số điện thoại bác sĩ không hợp lệ', 400);
+      }
+    }
+
     const updatedDoctor = await prisma.doctor.update({
       where: { id },
       data: {
-        name: name ?? doctor.name,
-        email: email ?? doctor.email,
-        phone: phone ?? doctor.phone,
-        specialty: specialty ?? doctor.specialty,
-        qualification: qualification ?? doctor.qualification,
-        experience: experience ?? doctor.experience,
-        workingDays: workingDays ?? doctor.workingDays,
-        workingHours: workingHours ?? doctor.workingHours,
+        name: name ? name.trim() : doctor.name,
+        email: email ? email.trim().toLowerCase() : doctor.email,
+        phone: phone ? phone.trim() : doctor.phone,
+        specialty: specialty ? specialty.trim() : doctor.specialty,
+        qualification: qualification ? qualification.trim() : doctor.qualification,
+        experience: experience ? experience.trim() : doctor.experience,
+        workingDays: workingDays ? workingDays.trim() : doctor.workingDays,
+        workingHours: workingHours ? workingHours.trim() : doctor.workingHours,
         status: status ?? doctor.status,
       },
     });
@@ -135,7 +155,18 @@ export const updateDoctor = async (req: Request, res: Response) => {
 export const deleteDoctor = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
-    await prisma.doctor.delete({ where: { id } });
+    if (isNaN(id)) return sendError(res, 'ID bác sĩ không hợp lệ', 400);
+
+    const doctor = await prisma.doctor.findUnique({ where: { id } });
+    if (!doctor) return sendError(res, 'Không tìm thấy bác sĩ', 404);
+
+    await prisma.$transaction([
+      prisma.appointment.deleteMany({ where: { doctorId: id } }),
+      prisma.medicalRecord.deleteMany({ where: { doctorId: id } }),
+      prisma.treatment.deleteMany({ where: { doctorId: id } }),
+      prisma.doctor.delete({ where: { id } }),
+    ]);
+
     return sendSuccess(res, null, 'Xóa bác sĩ thành công');
   } catch (error: any) {
     return sendError(res, error.message || 'Lỗi xóa bác sĩ', 500);

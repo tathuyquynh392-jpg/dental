@@ -60,16 +60,27 @@ export const createService = async (req: Request, res: Response) => {
   try {
     const { name, description, price, duration, status } = req.body;
 
-    if (!name || price === undefined || !duration) {
+    if (!name || !name.trim() || price === undefined || duration === undefined) {
       return sendError(res, 'Vui lòng nhập tên dịch vụ, giá tiền và thời gian thực hiện', 400);
+    }
+
+    const priceNum = parseFloat(price);
+    const durationNum = parseInt(duration, 10);
+
+    if (isNaN(priceNum) || priceNum < 0) {
+      return sendError(res, 'Giá dịch vụ phải là số dương hợp lệ', 400);
+    }
+
+    if (isNaN(durationNum) || durationNum <= 0) {
+      return sendError(res, 'Thời gian thực hiện phải lớn hơn 0 phút', 400);
     }
 
     const service = await prisma.service.create({
       data: {
-        name,
-        description: description || '',
-        price: parseFloat(price),
-        duration: parseInt(duration, 10),
+        name: name.trim(),
+        description: description?.trim() || '',
+        price: priceNum,
+        duration: durationNum,
         status: status || 'ACTIVE',
       },
     });
@@ -83,18 +94,36 @@ export const createService = async (req: Request, res: Response) => {
 export const updateService = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return sendError(res, 'ID dịch vụ không hợp lệ', 400);
+
     const { name, description, price, duration, status } = req.body;
 
     const service = await prisma.service.findUnique({ where: { id } });
     if (!service) return sendError(res, 'Không tìm thấy dịch vụ', 404);
 
+    let priceNum = service.price;
+    if (price !== undefined) {
+      priceNum = parseFloat(price);
+      if (isNaN(priceNum) || priceNum < 0) {
+        return sendError(res, 'Giá dịch vụ không hợp lệ', 400);
+      }
+    }
+
+    let durationNum = service.duration;
+    if (duration !== undefined) {
+      durationNum = parseInt(duration, 10);
+      if (isNaN(durationNum) || durationNum <= 0) {
+        return sendError(res, 'Thời gian thực hiện không hợp lệ', 400);
+      }
+    }
+
     const updatedService = await prisma.service.update({
       where: { id },
       data: {
-        name: name ?? service.name,
-        description: description ?? service.description,
-        price: price !== undefined ? parseFloat(price) : service.price,
-        duration: duration !== undefined ? parseInt(duration, 10) : service.duration,
+        name: name ? name.trim() : service.name,
+        description: description !== undefined ? description.trim() : service.description,
+        price: priceNum,
+        duration: durationNum,
         status: status ?? service.status,
       },
     });
@@ -108,7 +137,18 @@ export const updateService = async (req: Request, res: Response) => {
 export const deleteService = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
-    await prisma.service.delete({ where: { id } });
+    if (isNaN(id)) return sendError(res, 'ID dịch vụ không hợp lệ', 400);
+
+    const service = await prisma.service.findUnique({ where: { id } });
+    if (!service) return sendError(res, 'Không tìm thấy dịch vụ', 404);
+
+    await prisma.$transaction([
+      prisma.appointment.deleteMany({ where: { serviceId: id } }),
+      prisma.treatment.deleteMany({ where: { serviceId: id } }),
+      prisma.invoiceItem.updateMany({ where: { serviceId: id }, data: { serviceId: null } }),
+      prisma.service.delete({ where: { id } }),
+    ]);
+
     return sendSuccess(res, null, 'Xóa dịch vụ thành công');
   } catch (error: any) {
     return sendError(res, error.message || 'Lỗi xóa dịch vụ', 500);

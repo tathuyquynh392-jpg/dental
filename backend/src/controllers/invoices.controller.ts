@@ -171,7 +171,17 @@ export const updateInvoice = async (req: Request, res: Response) => {
 export const deleteInvoice = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
-    await prisma.invoice.delete({ where: { id } });
+    if (isNaN(id)) return sendError(res, 'ID hóa đơn không hợp lệ', 400);
+
+    const invoice = await prisma.invoice.findUnique({ where: { id } });
+    if (!invoice) return sendError(res, 'Không tìm thấy hóa đơn', 404);
+
+    await prisma.$transaction([
+      prisma.payment.deleteMany({ where: { invoiceId: id } }),
+      prisma.invoiceItem.deleteMany({ where: { invoiceId: id } }),
+      prisma.invoice.delete({ where: { id } }),
+    ]);
+
     return sendSuccess(res, null, 'Xóa hóa đơn thành công');
   } catch (error: any) {
     return sendError(res, error.message || 'Lỗi xóa hóa đơn', 500);

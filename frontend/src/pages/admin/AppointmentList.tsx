@@ -120,8 +120,30 @@ export const AppointmentList: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const validateForm = () => {
+    if (!formData.patientId) {
+      showToast('Vui lòng chọn bệnh nhân', 'error');
+      return false;
+    }
+    if (!formData.doctorId) {
+      showToast('Vui lòng chọn bác sĩ khám', 'error');
+      return false;
+    }
+    if (!formData.serviceId) {
+      showToast('Vui lòng chọn dịch vụ khám', 'error');
+      return false;
+    }
+    if (!formData.appointmentDate) {
+      showToast('Vui lòng chọn ngày khám', 'error');
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateForm()) return;
+
     try {
       setSubmitting(true);
       if (editingApp) {
@@ -134,7 +156,7 @@ export const AppointmentList: React.FC = () => {
       setIsModalOpen(false);
       fetchAppointments();
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Lỗi tạo/cập nhật lịch hẹn', 'error');
+      showToast(err.response?.data?.message || err.message || 'Lỗi tạo/cập nhật lịch hẹn', 'error');
     } finally {
       setSubmitting(false);
     }

@@ -95,50 +95,49 @@ export const DoctorList: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const validateForm = () => {
+    if (!formData.name || !formData.name.trim()) {
+      showToast('Vui lòng nhập họ tên bác sĩ', 'error');
+      return false;
+    }
+    if (!formData.email || !formData.email.trim()) {
+      showToast('Vui lòng nhập email bác sĩ', 'error');
+      return false;
+    }
+    if (!formData.phone || !formData.phone.trim()) {
+      showToast('Vui lòng nhập số điện thoại bác sĩ', 'error');
+      return false;
+    }
+    const phoneRegex = /^[0-9+\s-]{9,15}$/;
+    if (!phoneRegex.test(formData.phone.trim())) {
+      showToast('Số điện thoại bác sĩ không hợp lệ (từ 9 - 15 chữ số)', 'error');
+      return false;
+    }
+    if (!formData.specialty || !formData.specialty.trim()) {
+      showToast('Vui lòng nhập chuyên khoa bác sĩ', 'error');
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateForm()) return;
+
     try {
       setSubmitting(true);
       if (editingDoctor) {
-        try {
-          await api.put(`/doctors/${editingDoctor.id}`, formData);
-        } catch (err) {
-          console.warn('API update failed, applying local edit fallback', err);
-        }
-        setDoctors((prev) =>
-          prev.map((d) => (d.id === editingDoctor.id ? { ...d, ...formData } as Doctor : d))
-        );
+        await api.put(`/doctors/${editingDoctor.id}`, formData);
         showToast('Cập nhật thông tin bác sĩ thành công', 'success');
       } else {
-        const newDoc: Doctor = {
-          id: Date.now(),
-          name: formData.name || 'BS. Nguyễn Văn Mới',
-          email: formData.email || 'bacsi@luckydental.com',
-          phone: formData.phone || '0901112222',
-          specialty: formData.specialty || 'Nha Khoa Tổng Quát',
-          qualification: formData.qualification || 'Bác sĩ Răng Hàm Mặt',
-          experience: formData.experience || '5 năm kinh nghiệm',
-          workingDays: formData.workingDays || 'Thứ 2 - Thứ 7',
-          workingHours: formData.workingHours || '08:00 - 17:00',
-          status: (formData.status as 'ACTIVE' | 'INACTIVE') || 'ACTIVE',
-        };
-        try {
-          const res = await api.post('/doctors', formData);
-          if (res && res.data && res.data.data) {
-            setDoctors((prev) => [res.data.data, ...prev]);
-          } else {
-            setDoctors((prev) => [newDoc, ...prev]);
-          }
-        } catch (err) {
-          setDoctors((prev) => [newDoc, ...prev]);
-        }
+        await api.post('/doctors', formData);
         showToast('Thêm bác sĩ mới thành công', 'success');
       }
       setIsModalOpen(false);
       fetchDoctors();
     } catch (err: any) {
-      showToast('Thao tác thành công', 'success');
-      setIsModalOpen(false);
+      const msg = err.response?.data?.message || err.message || 'Thao tác không thành công';
+      showToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -148,18 +147,13 @@ export const DoctorList: React.FC = () => {
     if (!deleteId) return;
     try {
       setSubmitting(true);
-      try {
-        await api.delete(`/doctors/${deleteId}`);
-      } catch (err) {
-        console.warn('API delete failed, applying local delete fallback', err);
-      }
-      setDoctors((prev) => prev.filter((d) => d.id !== deleteId));
-      showToast('Xóa thông tin bác sĩ thành công', 'success');
+      await api.delete(`/doctors/${deleteId}`);
+      showToast('Đã xóa hồ sơ bác sĩ khỏi hệ thống', 'success');
       setDeleteId(null);
       fetchDoctors();
     } catch (err: any) {
-      showToast('Xóa thông tin bác sĩ thành công', 'success');
-      setDeleteId(null);
+      const msg = err.response?.data?.message || err.message || 'Không thể xóa bác sĩ';
+      showToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }

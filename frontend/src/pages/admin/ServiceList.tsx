@@ -79,8 +79,26 @@ export const ServiceList: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const validateForm = () => {
+    if (!formData.name || !formData.name.trim()) {
+      showToast('Vui lòng nhập tên dịch vụ nha khoa', 'error');
+      return false;
+    }
+    if (formData.price < 0 || isNaN(formData.price)) {
+      showToast('Giá dịch vụ phải lớn hơn hoặc bằng 0', 'error');
+      return false;
+    }
+    if (formData.duration <= 0 || isNaN(formData.duration)) {
+      showToast('Thời gian thực hiện phải lớn hơn 0 phút', 'error');
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateForm()) return;
+
     try {
       setSubmitting(true);
       if (editingService) {
@@ -93,7 +111,7 @@ export const ServiceList: React.FC = () => {
       setIsModalOpen(false);
       fetchServices();
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Thao tác không thành công', 'error');
+      showToast(err.response?.data?.message || err.message || 'Thao tác không thành công', 'error');
     } finally {
       setSubmitting(false);
     }

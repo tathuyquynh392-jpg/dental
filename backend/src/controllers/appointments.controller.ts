@@ -261,7 +261,17 @@ export const updateAppointment = async (req: any, res: Response) => {
 export const deleteAppointment = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
-    await prisma.appointment.delete({ where: { id } });
+    if (isNaN(id)) return sendError(res, 'ID lịch hẹn không hợp lệ', 400);
+
+    const appointment = await prisma.appointment.findUnique({ where: { id } });
+    if (!appointment) return sendError(res, 'Không tìm thấy lịch hẹn', 404);
+
+    await prisma.$transaction([
+      prisma.medicalRecord.updateMany({ where: { appointmentId: id }, data: { appointmentId: null } }),
+      prisma.invoice.updateMany({ where: { appointmentId: id }, data: { appointmentId: null } }),
+      prisma.appointment.delete({ where: { id } }),
+    ]);
+
     return sendSuccess(res, null, 'Xóa lịch hẹn thành công');
   } catch (error: any) {
     return sendError(res, error.message || 'Lỗi xóa lịch hẹn', 500);

@@ -31,7 +31,7 @@ export const PatientList: React.FC = () => {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Form State
+  // Form & Error State
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -44,6 +44,7 @@ export const PatientList: React.FC = () => {
     notes: '',
     password: '',
   });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const { showToast } = useToast();
 
@@ -75,8 +76,49 @@ export const PatientList: React.FC = () => {
     }
   };
 
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+    if (!formData.name || !formData.name.trim()) {
+      errors.name = 'Vui lòng nhập họ và tên bệnh nhân';
+    }
+
+    if (!formData.phone || !formData.phone.trim()) {
+      errors.phone = 'Vui lòng nhập số điện thoại';
+    } else {
+      const phoneRegex = /^[0-9+\s-]{9,15}$/;
+      if (!phoneRegex.test(formData.phone.trim())) {
+        errors.phone = 'Số điện thoại không hợp lệ (từ 9 đến 15 chữ số)';
+      }
+    }
+
+    if (!editingPatient) {
+      if (!formData.email || !formData.email.trim()) {
+        errors.email = 'Vui lòng nhập địa chỉ email';
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(formData.email.trim())) {
+          errors.email = 'Địa chỉ email không đúng định dạng (VD: example@gmail.com)';
+        }
+      }
+    }
+
+    if (!formData.dateOfBirth) {
+      errors.dateOfBirth = 'Vui lòng chọn ngày sinh';
+    } else if (new Date(formData.dateOfBirth) > new Date()) {
+      errors.dateOfBirth = 'Ngày sinh không thể nằm ở tương lai';
+    }
+
+    if (!formData.address || !formData.address.trim()) {
+      errors.address = 'Vui lòng nhập địa chỉ bệnh nhân';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleOpenAddModal = () => {
     setEditingPatient(null);
+    setFormErrors({});
     setFormData({
       name: '',
       email: '',
@@ -94,13 +136,14 @@ export const PatientList: React.FC = () => {
 
   const handleOpenEditModal = (patient: Patient) => {
     setEditingPatient(patient);
+    setFormErrors({});
     setFormData({
       name: patient.user?.name || '',
       email: patient.user?.email || '',
       phone: patient.user?.phone || '',
-      dateOfBirth: patient.dateOfBirth,
-      gender: patient.gender,
-      address: patient.address,
+      dateOfBirth: patient.dateOfBirth || '',
+      gender: patient.gender || 'Nam',
+      address: patient.address || '',
       medicalHistory: patient.medicalHistory || '',
       allergy: patient.allergy || '',
       notes: patient.notes || '',
@@ -111,6 +154,11 @@ export const PatientList: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateForm()) {
+      showToast('Vui lòng kiểm tra lại thông tin nhập liệu', 'error');
+      return;
+    }
+
     try {
       setSubmitting(true);
       if (editingPatient) {
@@ -123,7 +171,11 @@ export const PatientList: React.FC = () => {
       setIsModalOpen(false);
       fetchPatients();
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Thao tác không thành công', 'error');
+      const errMsg = err.response?.data?.message || err.message || 'Thao tác không thành công';
+      showToast(errMsg, 'error');
+      if (errMsg.toLowerCase().includes('email')) {
+        setFormErrors((prev) => ({ ...prev, email: errMsg }));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -134,7 +186,7 @@ export const PatientList: React.FC = () => {
     try {
       setSubmitting(true);
       await api.delete(`/patients/${deleteId}`);
-      showToast('Đã xóa bệnh nhân khỏi hệ thống', 'success');
+      showToast('Đã xóa bệnh nhân và dữ liệu liên quan khỏi hệ thống', 'success');
       setDeleteId(null);
       fetchPatients();
     } catch (err: any) {
@@ -342,10 +394,16 @@ export const PatientList: React.FC = () => {
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-dental-500"
+                onChange={(e) => {
+                  setFormData({ ...formData, name: e.target.value });
+                  if (formErrors.name) setFormErrors({ ...formErrors, name: '' });
+                }}
+                className={`w-full px-3 py-2 rounded-xl border text-xs font-medium focus:outline-none focus:ring-2 ${
+                  formErrors.name ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-slate-200 focus:ring-dental-500'
+                }`}
+                placeholder="VD: Nguyễn Văn An"
               />
+              {formErrors.name && <p className="text-[11px] font-semibold text-rose-500 mt-1">{formErrors.name}</p>}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -354,10 +412,16 @@ export const PatientList: React.FC = () => {
               <input
                 type="tel"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                required
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-dental-500"
+                onChange={(e) => {
+                  setFormData({ ...formData, phone: e.target.value });
+                  if (formErrors.phone) setFormErrors({ ...formErrors, phone: '' });
+                }}
+                className={`w-full px-3 py-2 rounded-xl border text-xs font-medium focus:outline-none focus:ring-2 ${
+                  formErrors.phone ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-slate-200 focus:ring-dental-500'
+                }`}
+                placeholder="VD: 0988123456"
               />
+              {formErrors.phone && <p className="text-[11px] font-semibold text-rose-500 mt-1">{formErrors.phone}</p>}
             </div>
           </div>
 
@@ -369,11 +433,17 @@ export const PatientList: React.FC = () => {
               <input
                 type="email"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, email: e.target.value });
+                  if (formErrors.email) setFormErrors({ ...formErrors, email: '' });
+                }}
                 disabled={!!editingPatient}
-                required
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-dental-500 disabled:bg-slate-100"
+                className={`w-full px-3 py-2 rounded-xl border text-xs font-medium focus:outline-none focus:ring-2 disabled:bg-slate-100 ${
+                  formErrors.email ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-slate-200 focus:ring-dental-500'
+                }`}
+                placeholder="VD: an.nguyen@gmail.com"
               />
+              {formErrors.email && <p className="text-[11px] font-semibold text-rose-500 mt-1">{formErrors.email}</p>}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -382,10 +452,15 @@ export const PatientList: React.FC = () => {
               <input
                 type="date"
                 value={formData.dateOfBirth}
-                onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
-                required
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-dental-500"
+                onChange={(e) => {
+                  setFormData({ ...formData, dateOfBirth: e.target.value });
+                  if (formErrors.dateOfBirth) setFormErrors({ ...formErrors, dateOfBirth: '' });
+                }}
+                className={`w-full px-3 py-2 rounded-xl border text-xs font-medium focus:outline-none focus:ring-2 ${
+                  formErrors.dateOfBirth ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-slate-200 focus:ring-dental-500'
+                }`}
               />
+              {formErrors.dateOfBirth && <p className="text-[11px] font-semibold text-rose-500 mt-1">{formErrors.dateOfBirth}</p>}
             </div>
           </div>
 
@@ -411,10 +486,16 @@ export const PatientList: React.FC = () => {
               <input
                 type="text"
                 value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                required
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-dental-500"
+                onChange={(e) => {
+                  setFormData({ ...formData, address: e.target.value });
+                  if (formErrors.address) setFormErrors({ ...formErrors, address: '' });
+                }}
+                className={`w-full px-3 py-2 rounded-xl border text-xs font-medium focus:outline-none focus:ring-2 ${
+                  formErrors.address ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-slate-200 focus:ring-dental-500'
+                }`}
+                placeholder="VD: 123 Nguyễn Trãi, Quận 5, TP.HCM"
               />
+              {formErrors.address && <p className="text-[11px] font-semibold text-rose-500 mt-1">{formErrors.address}</p>}
             </div>
           </div>
 
@@ -451,7 +532,7 @@ export const PatientList: React.FC = () => {
             <button
               type="submit"
               disabled={submitting}
-              className="px-5 py-2 rounded-xl bg-dental-600 hover:bg-dental-700 text-white text-xs font-bold shadow-md shadow-dental-200"
+              className="px-5 py-2 rounded-xl bg-dental-600 hover:bg-dental-700 text-white text-xs font-bold shadow-md shadow-dental-200 disabled:opacity-50"
             >
               {submitting ? 'Đang xử lý...' : editingPatient ? 'Cập nhật' : 'Thêm mới'}
             </button>

@@ -380,7 +380,7 @@ api.interceptors.response.use(
           const idMatch = url.match(/\/patients\/(\d+)/);
           if (idMatch) {
             const pid = parseInt(idMatch[1]);
-            const p = store.patients.find((item: any) => item.id === pid) || store.patients[0];
+            const p = store.patients.find((item: any) => Number(item.id) === pid) || store.patients[0];
             return Promise.resolve({ data: { success: true, data: p } });
           }
           let list = [...store.patients];
@@ -408,27 +408,65 @@ api.interceptors.response.use(
           });
         }
         if (method === 'post') {
+          const { name, email, phone, dateOfBirth, gender, address, medicalHistory, allergy, notes } = reqBody;
+
+          // Field validations
+          if (!name || !name.trim()) {
+            return Promise.reject({ response: { status: 400, data: { success: false, message: 'Họ và tên bệnh nhân không được để trống' } } });
+          }
+          if (!phone || !phone.trim()) {
+            return Promise.reject({ response: { status: 400, data: { success: false, message: 'Số điện thoại không được để trống' } } });
+          }
+          const phoneRegex = /^[0-9+\s-]{9,15}$/;
+          if (!phoneRegex.test(phone.trim())) {
+            return Promise.reject({ response: { status: 400, data: { success: false, message: 'Số điện thoại không hợp lệ (từ 9 đến 15 chữ số)' } } });
+          }
+          if (!email || !email.trim()) {
+            return Promise.reject({ response: { status: 400, data: { success: false, message: 'Email không được để trống' } } });
+          }
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(email.trim())) {
+            return Promise.reject({ response: { status: 400, data: { success: false, message: 'Email không đúng định dạng (VD: example@domain.com)' } } });
+          }
+          if (!dateOfBirth) {
+            return Promise.reject({ response: { status: 400, data: { success: false, message: 'Ngày sinh không được để trống' } } });
+          }
+          if (new Date(dateOfBirth) > new Date()) {
+            return Promise.reject({ response: { status: 400, data: { success: false, message: 'Ngày sinh không thể nằm ở tương lai' } } });
+          }
+          if (!address || !address.trim()) {
+            return Promise.reject({ response: { status: 400, data: { success: false, message: 'Địa chỉ không được để trống' } } });
+          }
+
+          // Duplicate Email Check
+          const existingEmail = store.patients.some((p: any) => p.user?.email?.toLowerCase() === email.trim().toLowerCase()) ||
+                                store.users.some((u: any) => u.email?.toLowerCase() === email.trim().toLowerCase());
+          if (existingEmail) {
+            return Promise.reject({ response: { status: 409, data: { success: false, message: 'Email này đã tồn tại trong hệ thống. Vui lòng chọn email khác.' } } });
+          }
+
           const newId = Date.now();
           const newPatient: Patient = {
             id: newId,
             userId: newId + 100,
-            dateOfBirth: reqBody.dateOfBirth || '1995-01-01',
-            gender: reqBody.gender || 'Nam',
-            address: reqBody.address || 'TP.HCM',
-            medicalHistory: reqBody.medicalHistory || '',
-            allergy: reqBody.allergy || '',
-            notes: reqBody.notes || '',
+            dateOfBirth: dateOfBirth,
+            gender: gender || 'Nam',
+            address: address.trim(),
+            medicalHistory: medicalHistory?.trim() || '',
+            allergy: allergy?.trim() || '',
+            notes: notes?.trim() || '',
             createdAt: new Date().toISOString(),
             user: {
               id: newId + 100,
-              name: reqBody.name || 'Bệnh Nhân Mới',
-              email: reqBody.email || `patient${newId}@gmail.com`,
-              phone: reqBody.phone || '0900000000',
+              name: name.trim(),
+              email: email.trim().toLowerCase(),
+              phone: phone.trim(),
               role: 'PATIENT' as const,
               status: 'ACTIVE' as const
             }
           };
           store.patients.unshift(newPatient);
+          store.users.unshift(newPatient.user!);
           saveStore(store);
           return Promise.resolve({ data: { success: true, message: 'Thêm bệnh nhân thành công', data: newPatient } });
         }
@@ -436,19 +474,32 @@ api.interceptors.response.use(
           const idMatch = url.match(/\/patients\/(\d+)/);
           if (idMatch) {
             const pid = parseInt(idMatch[1]);
-            const idx = store.patients.findIndex((item: any) => item.id === pid);
+            const idx = store.patients.findIndex((item: any) => Number(item.id) === pid);
             if (idx !== -1) {
+              const { name, phone, dateOfBirth, gender, address, medicalHistory, allergy, notes } = reqBody;
+
+              if (phone) {
+                const phoneRegex = /^[0-9+\s-]{9,15}$/;
+                if (!phoneRegex.test(phone.trim())) {
+                  return Promise.reject({ response: { status: 400, data: { success: false, message: 'Số điện thoại không hợp lệ' } } });
+                }
+              }
+              if (dateOfBirth && new Date(dateOfBirth) > new Date()) {
+                return Promise.reject({ response: { status: 400, data: { success: false, message: 'Ngày sinh không thể ở tương lai' } } });
+              }
+
               store.patients[idx] = {
                 ...store.patients[idx],
-                dateOfBirth: reqBody.dateOfBirth || store.patients[idx].dateOfBirth,
-                gender: reqBody.gender || store.patients[idx].gender,
-                address: reqBody.address || store.patients[idx].address,
-                medicalHistory: reqBody.medicalHistory || store.patients[idx].medicalHistory,
-                allergy: reqBody.allergy || store.patients[idx].allergy,
+                dateOfBirth: dateOfBirth || store.patients[idx].dateOfBirth,
+                gender: gender || store.patients[idx].gender,
+                address: address !== undefined ? address : store.patients[idx].address,
+                medicalHistory: medicalHistory !== undefined ? medicalHistory : store.patients[idx].medicalHistory,
+                allergy: allergy !== undefined ? allergy : store.patients[idx].allergy,
+                notes: notes !== undefined ? notes : store.patients[idx].notes,
                 user: {
                   ...store.patients[idx].user,
-                  name: reqBody.name || store.patients[idx].user?.name,
-                  phone: reqBody.phone || store.patients[idx].user?.phone,
+                  name: name || store.patients[idx].user?.name,
+                  phone: phone || store.patients[idx].user?.phone,
                 }
               };
               saveStore(store);
@@ -460,7 +511,11 @@ api.interceptors.response.use(
           const idMatch = url.match(/\/patients\/(\d+)/);
           if (idMatch) {
             const pid = parseInt(idMatch[1]);
-            store.patients = store.patients.filter((item: any) => item.id !== pid);
+            store.patients = store.patients.filter((item: any) => Number(item.id) !== pid);
+            store.appointments = store.appointments.filter((item: any) => Number(item.patientId) !== pid);
+            store.medicalRecords = store.medicalRecords.filter((item: any) => Number(item.patientId) !== pid);
+            store.treatments = store.treatments.filter((item: any) => Number(item.patientId) !== pid);
+            store.invoices = store.invoices.filter((item: any) => Number(item.patientId) !== pid);
             saveStore(store);
             return Promise.resolve({ data: { success: true, message: 'Xóa bệnh nhân thành công' } });
           }

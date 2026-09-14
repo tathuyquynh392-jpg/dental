@@ -131,13 +131,31 @@ export const createPatient = async (req: Request, res: Response) => {
   try {
     const { name, email, phone, dateOfBirth, gender, address, medicalHistory, allergy, notes, password } = req.body;
 
-    if (!name || !email || !phone || !dateOfBirth || !gender || !address) {
+    if (!name || !name.trim() || !email || !email.trim() || !phone || !phone.trim() || !dateOfBirth || !gender || !address || !address.trim()) {
       return sendError(res, 'Vui lòng điền đầy đủ các thông tin bắt buộc (*)', 400);
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    // Phone format regex
+    const phoneRegex = /^[0-9+\s-]{9,15}$/;
+    if (!phoneRegex.test(phone.trim())) {
+      return sendError(res, 'Số điện thoại không hợp lệ (từ 9 đến 15 chữ số)', 400);
+    }
+
+    // Email format regex
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return sendError(res, 'Địa chỉ email không đúng định dạng (VD: example@domain.com)', 400);
+    }
+
+    // Date of birth validation
+    if (new Date(dateOfBirth) > new Date()) {
+      return sendError(res, 'Ngày sinh không thể nằm ở tương lai', 400);
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const existingUser = await prisma.user.findUnique({ where: { email: cleanEmail } });
     if (existingUser) {
-      return sendError(res, 'Email này đã tồn tại trong hệ thống', 409);
+      return sendError(res, 'Email này đã tồn tại trong hệ thống. Vui lòng sử dụng email khác.', 409);
     }
 
     const hashedPassword = await bcrypt.hash(password || 'patient123', 10);
@@ -145,16 +163,16 @@ export const createPatient = async (req: Request, res: Response) => {
     const patient = await prisma.patient.create({
       data: {
         dateOfBirth,
-        gender,
-        address,
-        medicalHistory: medicalHistory || '',
-        allergy: allergy || '',
-        notes: notes || '',
+        gender: gender || 'Nam',
+        address: address.trim(),
+        medicalHistory: medicalHistory?.trim() || '',
+        allergy: allergy?.trim() || '',
+        notes: notes?.trim() || '',
         user: {
           create: {
-            name,
-            email,
-            phone,
+            name: name.trim(),
+            email: cleanEmail,
+            phone: phone.trim(),
             password: hashedPassword,
             role: 'PATIENT',
             status: 'ACTIVE',
@@ -173,6 +191,10 @@ export const createPatient = async (req: Request, res: Response) => {
 export const updatePatient = async (req: any, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      return sendError(res, 'ID bệnh nhân không hợp lệ', 400);
+    }
+
     const { name, email, phone, dateOfBirth, gender, address, medicalHistory, allergy, notes, status } = req.body;
 
     // Patient scope restriction
@@ -183,21 +205,31 @@ export const updatePatient = async (req: any, res: Response) => {
     const patient = await prisma.patient.findUnique({ where: { id } });
     if (!patient) return sendError(res, 'Không tìm thấy bệnh nhân', 404);
 
+    if (phone) {
+      const phoneRegex = /^[0-9+\s-]{9,15}$/;
+      if (!phoneRegex.test(phone.trim())) {
+        return sendError(res, 'Số điện thoại không hợp lệ (từ 9 đến 15 chữ số)', 400);
+      }
+    }
+
+    if (dateOfBirth && new Date(dateOfBirth) > new Date()) {
+      return sendError(res, 'Ngày sinh không thể nằm ở tương lai', 400);
+    }
+
     // Update patient record
     const updatedPatient = await prisma.patient.update({
       where: { id },
       data: {
         dateOfBirth: dateOfBirth ?? patient.dateOfBirth,
         gender: gender ?? patient.gender,
-        address: address ?? patient.address,
-        // Only allow medical history updates by admin or if provided
+        address: address ? address.trim() : patient.address,
         medicalHistory: req.user?.role === 'ADMIN' ? (medicalHistory ?? patient.medicalHistory) : patient.medicalHistory,
         allergy: req.user?.role === 'ADMIN' ? (allergy ?? patient.allergy) : patient.allergy,
         notes: req.user?.role === 'ADMIN' ? (notes ?? patient.notes) : patient.notes,
         user: {
           update: {
-            name: name ?? undefined,
-            phone: phone ?? undefined,
+            name: name ? name.trim() : undefined,
+            phone: phone ? phone.trim() : undefined,
             status: req.user?.role === 'ADMIN' ? (status ?? undefined) : undefined,
           },
         },
@@ -214,12 +246,22 @@ export const updatePatient = async (req: any, res: Response) => {
 export const deletePatient = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const patient = await prisma.patient.findUnique({ where: { id } });
+    if (isNaN(id)) {
+      return sendError(res, 'ID bệnh nhân không hợp lệ', 400);
+    }
 
+    const patient = await prisma.patient.findUnique({ where: { id } });
     if (!patient) return sendError(res, 'Không tìm thấy bệnh nhân', 404);
 
-    // Delete associated user will cascade delete patient
-    await prisma.user.delete({ where: { id: patient.userId } });
+    // Perform cascade delete safely in a transaction to prevent foreign key errors
+    await prisma.$transaction([
+      prisma.appointment.deleteMany({ where: { patientId: id } }),
+      prisma.medicalRecord.deleteMany({ where: { patientId: id } }),
+      prisma.treatment.deleteMany({ where: { patientId: id } }),
+      prisma.invoice.deleteMany({ where: { patientId: id } }),
+      prisma.patient.delete({ where: { id } }),
+      prisma.user.delete({ where: { id: patient.userId } }),
+    ]);
 
     return sendSuccess(res, null, 'Xóa bệnh nhân thành công');
   } catch (error: any) {
